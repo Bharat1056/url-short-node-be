@@ -1,0 +1,20 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Link {
+  id           Int       @id @default(autoincrement())
+  shortCode    String    @unique @map("short_code") @db.VarChar(8)
+  targetUrl    String    @map("target_url")
+  totalClicks  Int       @default(0) @map("total_clicks")
+  lastClicked  DateTime? @map("last_clicked")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  @@index([shortCode])
+  @@map("links")
+}
