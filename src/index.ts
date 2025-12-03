@@ -6,12 +6,17 @@ import router from './routes';
 import { formatUptime } from './utils/uptime';
 import { errorHandler } from './middlewares/error.middleware';
 
+import { startUptimeMonitor } from './jobs/uptimeMonitor';
+
 dotenv.config();
 
 const app = express();
 const prisma = new PrismaClient();
 const port = process.env.PORT || 3001;
 const startTime = Date.now();
+
+// Start the uptime monitor
+startUptimeMonitor();
 
 app.use(cors());
 app.use(express.json());

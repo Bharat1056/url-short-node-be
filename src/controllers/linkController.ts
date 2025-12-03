@@ -58,6 +58,12 @@ export const getLinks = asyncHandler(async (req: Request, res: Response) => {
       skip,
       take: limit,
       orderBy: { createdAt: 'desc' },
+      include: {
+        uptimeChecks: {
+          take: 1,
+          orderBy: { createdAt: 'desc' },
+        },
+      },
     }),
     prisma.link.count({ where }),
   ]);
@@ -87,6 +93,15 @@ export const getLinkStats = asyncHandler(async (req: Request, res: Response) => 
   const { code } = req.params;
   const link = await prisma.link.findUnique({
     where: { shortCode: code },
+    include: {
+      clicks: {
+        orderBy: { createdAt: 'asc' },
+      },
+      uptimeChecks: {
+        orderBy: { createdAt: 'desc' },
+        take: 50, // Limit to last 50 checks to avoid huge payload
+      },
+    },
   });
 
   if (!link) {
@@ -121,14 +136,21 @@ export const redirectLink = asyncHandler(async (req: Request, res: Response) => 
     throw new ApiError(404, 'Link not found');
   }
 
-  // Async update click count
-  await prisma.link.update({
-    where: { shortCode: code },
-    data: {
-      totalClicks: { increment: 1 },
-      lastClicked: new Date(),
-    },
-  });
+  // Async update click count and create click record
+  await prisma.$transaction([
+    prisma.link.update({
+      where: { shortCode: code },
+      data: {
+        totalClicks: { increment: 1 },
+        lastClicked: new Date(),
+      },
+    }),
+    prisma.click.create({
+      data: {
+        linkId: link.id,
+      },
+    }),
+  ]);
 
 
   res.redirect(link.targetUrl);

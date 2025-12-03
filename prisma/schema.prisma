@@ -14,7 +14,30 @@ model Link {
   totalClicks  Int       @default(0) @map("total_clicks")
   lastClicked  DateTime? @map("last_clicked")
   createdAt    DateTime  @default(now()) @map("created_at")
+  clicks       Click[]
+  uptimeChecks UptimeCheck[]
 
   @@index([shortCode])
   @@map("links")
+}
+
+model Click {
+  id        Int      @id @default(autoincrement())
+  linkId    Int      @map("link_id")
+  link      Link     @relation(fields: [linkId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([linkId])
+  @@map("clicks")
+}
+
+model UptimeCheck {
+  id        Int      @id @default(autoincrement())
+  linkId    Int      @map("link_id")
+  link      Link     @relation(fields: [linkId], references: [id], onDelete: Cascade)
+  status    String   // "UP" or "DOWN"
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([linkId])
+  @@map("uptime_checks")
 }
