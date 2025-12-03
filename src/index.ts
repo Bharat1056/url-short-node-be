@@ -18,7 +18,7 @@ const startTime = Date.now();
 startUptimeMonitor();
 
 app.use(cors({
-  origin: 'https://url-shortener-node-pied.vercel.app/**',
+  origin: process.env.FRONTEND_URL!,
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
