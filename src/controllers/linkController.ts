@@ -125,10 +125,6 @@ export const getLinkStats = asyncHandler(async (req: Request, res: Response) => 
     });
   }
 
-  // 2. Fetch link with all data including the new check
-  const sevenDaysAgo = new Date();
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
   const linkWithData = await prisma.link.findUnique({
     where: { shortCode: code },
     include: {
@@ -136,11 +132,6 @@ export const getLinkStats = asyncHandler(async (req: Request, res: Response) => 
         orderBy: { createdAt: 'asc' },
       },
       uptimeChecks: {
-        where: {
-          createdAt: {
-            gte: sevenDaysAgo,
-          },
-        },
         orderBy: { createdAt: 'desc' },
       },
     },
@@ -177,6 +168,8 @@ export const getLinkStats = asyncHandler(async (req: Request, res: Response) => 
       date,
       uptimePercentage: stats.total > 0 ? Math.round((stats.up / stats.total) * 100) : 0,
       totalChecks: stats.total,
+      upChecks: stats.up,
+      downChecks: stats.total - stats.up,
     }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
