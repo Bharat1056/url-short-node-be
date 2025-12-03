@@ -18,7 +18,10 @@ const startTime = Date.now();
 startUptimeMonitor();
 
 app.use(cors({
-  origin: process.env.FRONTEND_URL!,
+  origin: [
+    process.env.FRONTEND_URL_1 as string,
+    process.env.FRONTEND_URL_2 as string
+  ],
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
 }));
 app.use(express.json());
