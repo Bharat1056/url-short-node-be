@@ -1,10 +1,8 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../utils/prisma';
 import { asyncHandler } from '../utils/asyncHandler';
 import { ApiError } from '../utils/ApiError';
 import { ApiResponse } from '../utils/ApiResponse';
-
-const prisma = new PrismaClient();
 
 export const createLink = asyncHandler(async (req: Request, res: Response) => {
   const { targetUrl, customCode } = req.body;
@@ -91,24 +89,105 @@ export const getLinks = asyncHandler(async (req: Request, res: Response) => {
 
 export const getLinkStats = asyncHandler(async (req: Request, res: Response) => {
   const { code } = req.params;
-  const link = await prisma.link.findUnique({
+  let link = await prisma.link.findUnique({
     where: { shortCode: code },
-    include: {
-      clicks: {
-        orderBy: { createdAt: 'asc' },
-      },
-      uptimeChecks: {
-        orderBy: { createdAt: 'desc' },
-        take: 50, // Limit to last 50 checks to avoid huge payload
-      },
-    },
   });
 
   if (!link) {
     throw new ApiError(404, 'Link not found');
   }
 
-  res.json(new ApiResponse(200, link, "Link stats fetched successfully"));
+  // 1. Perform immediate uptime check
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    const response = await fetch(link.targetUrl, {
+      method: 'HEAD',
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+    const status = response.ok ? 'UP' : 'DOWN';
+
+    await prisma.uptimeCheck.create({
+      data: {
+        linkId: link.id,
+        status,
+      },
+    });
+  } catch (error) {
+    await prisma.uptimeCheck.create({
+      data: {
+        linkId: link.id,
+        status: 'DOWN',
+      },
+    });
+  }
+
+  // 2. Fetch link with all data including the new check
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+  const linkWithData = await prisma.link.findUnique({
+    where: { shortCode: code },
+    include: {
+      clicks: {
+        orderBy: { createdAt: 'asc' },
+      },
+      uptimeChecks: {
+        where: {
+          createdAt: {
+            gte: sevenDaysAgo,
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      },
+    },
+  });
+
+  if (!linkWithData) {
+     throw new ApiError(404, 'Link not found');
+  }
+
+  // 3. Aggregate daily uptime
+  const dailyStats = new Map<string, { total: number; up: number }>();
+
+  // Initialize last 7 days with 0
+  for (let i = 0; i < 7; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().split('T')[0];
+    dailyStats.set(dateStr, { total: 0, up: 0 });
+  }
+
+  linkWithData.uptimeChecks.forEach((check) => {
+    const dateStr = check.createdAt.toISOString().split('T')[0];
+    if (dailyStats.has(dateStr)) {
+      const stats = dailyStats.get(dateStr)!;
+      stats.total++;
+      if (check.status === 'UP') {
+        stats.up++;
+      }
+    }
+  });
+
+  const dailyUptime = Array.from(dailyStats.entries())
+    .map(([date, stats]) => ({
+      date,
+      uptimePercentage: stats.total > 0 ? Math.round((stats.up / stats.total) * 100) : 0,
+      totalChecks: stats.total,
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  // Limit uptimeChecks in response to last 50 to keep payload small, but we used all for aggregation
+  const responseData = {
+    ...linkWithData,
+    uptimeChecks: linkWithData.uptimeChecks.slice(0, 50),
+    dailyUptime,
+  };
+
+  res.json(new ApiResponse(200, responseData, "Link stats fetched successfully"));
 });
 
 export const deleteLink = asyncHandler(async (req: Request, res: Response) => {

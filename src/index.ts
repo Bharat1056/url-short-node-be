@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from './utils/prisma';
 import router from './routes';
 import { formatUptime } from './utils/uptime';
 import { errorHandler } from './middlewares/error.middleware';
@@ -11,7 +11,6 @@ import { startUptimeMonitor } from './jobs/uptimeMonitor';
 dotenv.config();
 
 const app = express();
-const prisma = new PrismaClient();
 const port = process.env.PORT || 3001;
 const startTime = Date.now();
 
@@ -30,19 +29,23 @@ app.use(errorHandler);
 app.get('/healthz', async (req, res) => {
   const uptimeSeconds = Math.floor((Date.now() - startTime) / 1000);
 
-  let dbConnected = false;
-  let dbResponseTime = '0ms';
+  const checkDb = async () => {
+    try {
+      const start = Date.now();
+      await prisma.$queryRawUnsafe('SELECT 1');
+      return {
+        connected: true,
+        responseTime: `${Date.now() - start}ms`
+      };
+    } catch {
+      return {
+        connected: false,
+        responseTime: '0ms'
+      };
+    }
+  };
 
-  try {
-    const start = Date.now();
-    await prisma.$queryRaw`SELECT 1`;
-    dbResponseTime = `${Date.now() - start}ms`;
-    dbConnected = true;
-  } catch (e) {
-    console.error('Database health check failed', e);
-  }
-
-  const memoryUsage = process.memoryUsage();
+  const db = await checkDb();
 
   res.json({
     ok: true,
@@ -56,16 +59,14 @@ app.get('/healthz', async (req, res) => {
       nodeVersion: process.version,
       environment: process.env.NODE_ENV || 'development',
       memoryUsage: {
-        heapUsed: `${Math.round(memoryUsage.heapUsed / 1024 / 1024)}MB`,
-        heapTotal: `${Math.round(memoryUsage.heapTotal / 1024 / 1024)}MB`,
+        heapUsed: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`,
+        heapTotal: `${Math.round(process.memoryUsage().heapTotal / 1024 / 1024)}MB`,
       },
     },
-    database: {
-      connected: dbConnected,
-      responseTime: dbResponseTime,
-    },
+    database: db,
   });
 });
+
 
 app.listen(port, () => {
   console.log(`Server running at http://localhost:${port}`);
